@@ -1,0 +1,8 @@
+{
+  "name": "Shu Photo ∆I",
+  "description": "An advanced image AI studio powered by the Gemini API. Generate, edit, and analyze images with cutting-edge artificial intelligence.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}

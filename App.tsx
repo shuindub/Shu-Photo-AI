@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppTab, HistoryItem, LoadingStates, HandoffData } from './types';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
@@ -8,6 +7,7 @@ import TabButton from './components/TabButton';
 import Studio from './features/Studio';
 import HistorySidebar from './components/HistorySidebar';
 import ChatWidget from './components/Chatbot/ChatWidget';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { SparklesIcon, PencilSquareIcon, PhotoIcon, ArrowTrendingUpIcon, FilmIcon } from './components/Icons';
 
 const MainLayout: React.FC = () => {
@@ -278,6 +278,7 @@ const MainLayout: React.FC = () => {
       />
       
       <ChatWidget />
+      <PWAInstallPrompt />
     </div>
   );
 };

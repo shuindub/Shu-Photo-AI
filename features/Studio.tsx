@@ -11,6 +11,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useBackRoom } from '../contexts/BackRoomContext';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { BIOMETRIC_RULE } from '../config/biometric';
+import { Logger } from '../utils/logger';
 
 import ErrorAlert from '../components/ErrorAlert';
 import ChatMessageComponent from '../components/ChatMessage';
@@ -295,7 +296,7 @@ const Studio: React.FC<StudioProps> = ({
           mimeType
         });
       } catch (err) {
-        console.error("Image processing failed", err);
+        Logger.error("Studio", "Image processing failed", err);
         setError('Failed to process image. It might be corrupted or too large.');
       }
     }
@@ -469,6 +470,13 @@ const Studio: React.FC<StudioProps> = ({
     if ((!textToSend.trim() && !hasRegularImages) && !isBatchMode && !isBiometricAnalysis) return;
     
     if (!chatSession) return;
+    
+    Logger.info("Studio", "Processing user message", { 
+        textLength: textToSend.length, 
+        tab: activeTab, 
+        images: images.length,
+        isBatchMode 
+    });
 
     // Batch Mode Handling
     if (isBatchMode && !overridePrompt) {
@@ -507,6 +515,7 @@ const Studio: React.FC<StudioProps> = ({
                  });
                  await Promise.all(promises);
              } catch (e) {
+                 Logger.error("Studio", "Batch processing error", e);
                  setError("Batch processing error");
              } finally {
                  setIsLoading(false);
@@ -574,6 +583,7 @@ const Studio: React.FC<StudioProps> = ({
                  });
                  await Promise.all(promises);
              } catch (e) {
+                  Logger.error("Studio", "Batch processing error", e);
                   setError("Batch processing error");
              } finally {
                   setIsLoading(false);
@@ -609,7 +619,7 @@ const Studio: React.FC<StudioProps> = ({
           try {
               // Analyze the pose reference first
               let poseAnalysis = '';
-              const analysisPrompt = "Describe the skeleton pose, limb position and camera angle. Use clinical, safe, geometric terms only. Do not describe clothing, skin, or gender.";
+              const analysisPrompt = "Describe the skeleton pose, limb position and camera angle. Use clinical, safe, geometric terms only. Do not describe clothing, skin, or gender. Provide a full and complete description. Output as much detail as possible. Do not truncate.";
               
               if (selectedEngine !== 'gemini') {
                   if (!config.openRouterKey) throw new Error("OpenRouter API Key missing for pose extraction.");
@@ -619,7 +629,7 @@ const Studio: React.FC<StudioProps> = ({
               }
 
               augmentedPrompt += `\n\nTARGET POSE INSTRUCTION: Change the subject's pose to: ${poseAnalysis}.`;
-              setMessages(prev => [...prev, { id: Date.now().toString() + '_pose', author: 'model', text: `🧠 Pose extracted: ${poseAnalysis.substring(0, 100)}...` }]);
+              setMessages(prev => [...prev, { id: Date.now().toString() + '_pose', author: 'model', text: `🧠 Pose extracted:\n\n${poseAnalysis}` }]);
           } catch (err) {
               console.error("Pose extraction failed", err);
               const errMsg = err instanceof Error ? err.message : "Unknown error";
@@ -661,6 +671,8 @@ const Studio: React.FC<StudioProps> = ({
               
               if (response.functionCalls && response.functionCalls.length > 0) {
                    const call = response.functionCalls[0];
+                   Logger.info("Studio", `Tool call: ${call.name}`);
+
                    if (call.name === 'generateImage') {
                        const args = call.args as any;
                        const prompt = args.prompt;
@@ -709,7 +721,7 @@ const Studio: React.FC<StudioProps> = ({
                               results.push(result);
                               success = true;
                           } catch (e: any) {
-                              console.error(`Attempt ${attempts} failed for image ${i + 1}:`, e);
+                              Logger.warn("Studio", `Edit Attempt ${attempts} failed for image ${i + 1}`, e);
                               
                               if (attempts === MAX_RETRIES) {
                                   const errorMsg = e instanceof Error ? e.message : String(e);
@@ -810,7 +822,7 @@ const Studio: React.FC<StudioProps> = ({
       }
 
     } catch (err) {
-      console.error(err);
+      Logger.error("Studio", "Workflow failed", err);
       setError(err instanceof Error ? err.message : 'An error occurred');
       setMessages(prev => [...prev, { id: Date.now().toString() + '_err', author: 'model', text: `Error: ${err instanceof Error ? err.message : 'Unknown error'}` }]);
     } finally {

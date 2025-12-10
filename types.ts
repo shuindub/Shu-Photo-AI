@@ -111,6 +111,7 @@ export interface LindaConfig {
   instructions: string;
   voiceName?: string;
   customVoiceBase64?: string;
+  textToSpeech?: boolean;
 }
 
 export interface MiniMessage {

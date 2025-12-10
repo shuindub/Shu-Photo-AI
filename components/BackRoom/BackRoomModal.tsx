@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { XMarkIcon, CheckIcon, SparklesIcon, BackRoomIcon } from '../Icons';
+import { XMarkIcon, CheckIcon, SparklesIcon, BackRoomIcon, TrashIcon, ClipboardIcon } from '../Icons';
 import { useBackRoom } from '../../contexts/BackRoomContext';
 import { AppTab } from '../../types';
+import { Logger, LogEntry } from '../../utils/logger';
 
 interface BackRoomModalProps {
   isOpen: boolean;
@@ -12,13 +13,22 @@ interface BackRoomModalProps {
 const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
   const { config, updateConfig, resetToDefaults, isUnlocked, unlock } = useBackRoom();
   const [password, setPassword] = useState('');
-  const [activeTab, setActiveTab] = useState<'system' | 'glossary' | 'keys' | 'sd' | 'appearance'>('system');
+  const [activeTab, setActiveTab] = useState<'system' | 'glossary' | 'keys' | 'sd' | 'appearance' | 'logs'>('system');
   const [error, setError] = useState('');
   const [localConfig, setLocalConfig] = useState(config);
+  
+  // Log Viewer State
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logFilter, setLogFilter] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       setLocalConfig(config);
+      // Subscribe to logs when modal is open
+      const unsubscribe = Logger.subscribe((newLogs) => {
+          setLogs(newLogs);
+      });
+      return () => unsubscribe();
     } else {
       setPassword('');
       setError('');
@@ -38,6 +48,27 @@ const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
   const handleSave = () => {
     updateConfig(localConfig);
     onClose();
+  };
+
+  const filteredLogs = logs.filter(log => 
+      log.message.toLowerCase().includes(logFilter.toLowerCase()) || 
+      log.module.toLowerCase().includes(logFilter.toLowerCase()) ||
+      log.level.toLowerCase().includes(logFilter.toLowerCase())
+  );
+
+  const getLevelColor = (level: string) => {
+      switch(level) {
+          case 'error': return 'text-red-500 bg-red-100 dark:bg-red-900/20';
+          case 'warn': return 'text-yellow-500 bg-yellow-100 dark:bg-yellow-900/20';
+          case 'success': return 'text-green-500 bg-green-100 dark:bg-green-900/20';
+          case 'debug': return 'text-purple-500 bg-purple-100 dark:bg-purple-900/20';
+          default: return 'text-blue-500 bg-blue-100 dark:bg-blue-900/20';
+      }
+  };
+
+  const copyLogs = () => {
+      const text = filteredLogs.map(l => `[${new Date(l.timestamp).toISOString()}] [${l.level.toUpperCase()}] [${l.module}] ${l.message} ${l.data ? JSON.stringify(l.data) : ''}`).join('\n');
+      navigator.clipboard.writeText(text);
   };
 
   if (!isOpen) return null;
@@ -111,6 +142,12 @@ const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
                   className={`px-6 py-3 font-medium text-sm transition-colors whitespace-nowrap ${activeTab === 'appearance' ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                 >
                   Appearance
+                </button>
+                <button
+                  onClick={() => setActiveTab('logs')}
+                  className={`px-6 py-3 font-medium text-sm transition-colors whitespace-nowrap ${activeTab === 'logs' ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                >
+                  System Logs
                 </button>
               </div>
 
@@ -186,7 +223,7 @@ const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
                             </p>
                         </div>
                     </div>
-                ) : (
+                ) : activeTab === 'appearance' ? (
                     <div className="h-full flex flex-col space-y-6">
                         <div className="space-y-4">
                             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Navigation Icon Theme</label>
@@ -236,6 +273,64 @@ const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
                                     <span className="text-xs text-gray-500">Original icons. Familiar and simple.</span>
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                ) : (
+                    /* LOGS VIEWER */
+                    <div className="h-full flex flex-col">
+                        <div className="flex items-center gap-2 mb-4 bg-white dark:bg-gray-800 p-2 rounded-lg border border-gray-200 dark:border-gray-700">
+                             <input 
+                                type="text"
+                                value={logFilter}
+                                onChange={(e) => setLogFilter(e.target.value)}
+                                placeholder="Filter logs..."
+                                className="flex-grow px-3 py-1.5 bg-transparent border-none outline-none text-sm text-gray-800 dark:text-gray-200"
+                             />
+                             <div className="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                             <button 
+                                onClick={copyLogs}
+                                className="p-1.5 text-gray-500 hover:text-indigo-500 dark:text-gray-400 dark:hover:text-indigo-400"
+                                title="Copy Logs"
+                             >
+                                 <ClipboardIcon />
+                             </button>
+                             <button 
+                                onClick={() => Logger.clearLogs()}
+                                className="p-1.5 text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400"
+                                title="Clear Logs"
+                             >
+                                 <TrashIcon className="w-4 h-4" />
+                             </button>
+                        </div>
+                        
+                        <div className="flex-grow overflow-y-auto bg-black rounded-lg p-4 font-mono text-xs custom-scrollbar border border-gray-700">
+                             {filteredLogs.length === 0 ? (
+                                 <div className="h-full flex items-center justify-center text-gray-600">No logs found.</div>
+                             ) : (
+                                 <div className="space-y-1">
+                                     {filteredLogs.map(log => (
+                                         <div key={log.id} className="flex gap-2 items-start break-all hover:bg-gray-900 p-1 rounded">
+                                             <span className="text-gray-500 whitespace-nowrap">
+                                                 {new Date(log.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second:'2-digit' })}.{new Date(log.timestamp).getMilliseconds().toString().padStart(3,'0')}
+                                             </span>
+                                             <span className={`font-bold px-1 rounded text-[10px] uppercase w-16 text-center shrink-0 ${getLevelColor(log.level)}`}>
+                                                 {log.level}
+                                             </span>
+                                             <span className="text-gray-400 shrink-0 w-24 truncate" title={log.module}>
+                                                 [{log.module}]
+                                             </span>
+                                             <span className="text-gray-300">
+                                                 {log.message}
+                                                 {log.data && (
+                                                     <div className="ml-4 mt-1 text-gray-500 overflow-x-auto">
+                                                         {typeof log.data === 'object' ? JSON.stringify(log.data, null, 2) : String(log.data)}
+                                                     </div>
+                                                 )}
+                                             </span>
+                                         </div>
+                                     ))}
+                                 </div>
+                             )}
                         </div>
                     </div>
                 )}

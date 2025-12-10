@@ -301,6 +301,20 @@ const LindaSettingsModal: React.FC<LindaSettingsModalProps> = ({ isOpen, onClose
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10l5 5 5-5z"/></svg>
                 </div>
               </div>
+
+              {/* Text-to-Speech Toggle */}
+              <div className="flex items-center justify-between pt-2">
+                  <div>
+                      <span className="block text-sm font-medium text-[#e3e3e3]">Always Speak Responses</span>
+                      <span className="text-xs text-[#8e918f]">Automatically read out text replies</span>
+                  </div>
+                  <button 
+                      onClick={() => setConfig(prev => ({ ...prev, textToSpeech: !prev.textToSpeech }))}
+                      className={`w-12 h-6 rounded-full transition-colors relative ${config.textToSpeech ? 'bg-[#a8c7fa]' : 'bg-[#444746]'}`}
+                  >
+                      <span className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${config.textToSpeech ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+              </div>
             </div>
 
             {/* Instructions Textarea */}

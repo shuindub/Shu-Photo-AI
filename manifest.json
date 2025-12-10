@@ -1,0 +1,18 @@
+{
+  "name": "Shu Photo ∆I",
+  "short_name": "Shu Photo",
+  "description": "An advanced image AI studio powered by the Gemini API. Generate, edit, and analyze images with cutting-edge artificial intelligence.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "type": "image/svg+xml",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ]
+}

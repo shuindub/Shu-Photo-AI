@@ -1,5 +1,6 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
-import { AppTab, HistoryItem, LoadingStates, HandoffData } from './types';
+import { AppTab, HistoryItem, LoadingStates, HandoffData, UserProfile } from './types';
 import { SettingsProvider, useSettings } from './contexts/SettingsContext';
 import { BackRoomProvider, useBackRoom } from './contexts/BackRoomContext';
 import Header from './components/Header';
@@ -8,7 +9,10 @@ import Studio from './features/Studio';
 import HistorySidebar from './components/HistorySidebar';
 import ChatWidget from './components/Chatbot/ChatWidget';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
-import { SparklesIcon, PencilSquareIcon, PhotoIcon, ArrowTrendingUpIcon, FilmIcon } from './components/Icons';
+import { SparklesIcon, PencilSquareIcon, PhotoIcon, ArrowTrendingUpIcon, FilmIcon, BeakerIcon } from './components/Icons';
+import { getHistory, saveHistoryItem, clearHistoryDB } from './utils/db';
+import { Logger } from './utils/logger';
+import { initGoogleAuth, syncHistoryWithDrive, isConnected, signOut } from './services/googleDriveService';
 
 const MainLayout: React.FC = () => {
   const { t } = useSettings();
@@ -16,15 +20,8 @@ const MainLayout: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AppTab>(AppTab.TEXT2IMAGE);
   
   // Persistent History
-  const [history, setHistory] = useState<HistoryItem[]>(() => {
-      try {
-          const saved = localStorage.getItem('app_history');
-          return saved ? JSON.parse(saved) : [];
-      } catch (e) {
-          console.error("Failed to load history", e);
-          return [];
-      }
-  });
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [user, setUser] = useState<UserProfile | null>(null);
 
   const [isHistoryVisible, setIsHistoryVisible] = useState<boolean>(false);
   const [revisitData, setRevisitData] = useState<HistoryItem | null>(null);
@@ -37,20 +34,74 @@ const MainLayout: React.FC = () => {
     [AppTab.IMAGE2TEXT]: false,
     [AppTab.FRAME2IMAGE]: false,
     [AppTab.ENCH_UPSCL]: false,
+    [AppTab.XPRMNT]: false,
   });
 
-  // Save history on change
+  const performSync = async (currentHistory: HistoryItem[]) => {
+      if (isConnected()) {
+          try {
+              const merged = await syncHistoryWithDrive(currentHistory);
+              // Update state with merged results
+              setHistory(merged);
+              // Update Local DB with merged results (so offline works next time)
+              merged.forEach(item => saveHistoryItem(item));
+          } catch (e) {
+              Logger.error("App", "Sync failed", e);
+          }
+      }
+  };
+
+  // Init Google Auth on config change
   useEffect(() => {
-      localStorage.setItem('app_history', JSON.stringify(history));
-  }, [history]);
+      if (config.googleClientId) {
+          initGoogleAuth(config.googleClientId, (loggedInUser) => {
+              setUser(loggedInUser);
+              Logger.info("App", `User logged in: ${loggedInUser.name}`);
+              // Trigger sync immediately upon login
+              getHistory().then(localData => performSync(localData));
+          });
+      }
+  }, [config.googleClientId]);
+
+  // Load history from IndexedDB on mount
+  useEffect(() => {
+      const loadHistory = async () => {
+          try {
+              const data = await getHistory();
+              const sorted = data.sort((a, b) => b.timestamp - a.timestamp);
+              setHistory(sorted);
+              Logger.info("App", `Loaded ${sorted.length} history items from DB`);
+          } catch (e) {
+              Logger.error("App", "Failed to load history from DB", e);
+          }
+      };
+      loadHistory();
+  }, []);
 
   const handleSetLoading = useCallback((tab: AppTab, loading: boolean) => {
     setLoadingStates(prev => ({ ...prev, [tab]: loading }));
   }, []);
 
   const addToHistory = useCallback((item: HistoryItem) => {
-    setHistory(prev => [item, ...prev]);
-  }, []);
+    // Update UI immediately
+    const newHistory = [item, ...history];
+    setHistory(newHistory);
+    
+    // Save to IndexedDB
+    saveHistoryItem(item).catch(e => {
+        Logger.error("App", "Failed to save history item to DB", e);
+    });
+
+    // Trigger Cloud Sync
+    if (isConnected()) {
+        performSync(newHistory);
+    }
+  }, [history]);
+
+  const handleSignOut = () => {
+      signOut();
+      setUser(null);
+  };
 
   const revisitHistoryItem = useCallback((item: HistoryItem) => {
     setActiveTab(item.type);
@@ -92,6 +143,7 @@ const MainLayout: React.FC = () => {
               case AppTab.IMAGE2TEXT: return <PhotoIcon className={iconClass} />;
               case AppTab.ENCH_UPSCL: return <ArrowTrendingUpIcon className={iconClass} />;
               case AppTab.FRAME2IMAGE: return <FilmIcon className={iconClass} />;
+              case AppTab.XPRMNT: return <BeakerIcon className={iconClass} />;
           }
       } else if (theme === 'cyberpunk') {
           switch (tab) {
@@ -142,6 +194,14 @@ const MainLayout: React.FC = () => {
                         <path d="M12 12L15 9M15 9L18 12M15 9V15" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" transform="translate(2,0)"/>
                     </svg>
                   );
+              case AppTab.XPRMNT:
+                  return (
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" style={{filter: "drop-shadow(0 0 3px #a855f7)"}}>
+                        <path d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23-.693" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                        <path d="M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082" stroke="#a855f7" strokeWidth="1.5" strokeLinecap="round"/>
+                        <path d="M5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                  );
           }
       } else {
           // Minimal Theme
@@ -188,6 +248,14 @@ const MainLayout: React.FC = () => {
                         <rect x="10" y="9" width="4" height="6" rx="0.5" stroke="currentColor" strokeWidth="2"/>
                     </svg>
                   );
+              case AppTab.XPRMNT:
+                  return (
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-5 h-5">
+                        <path d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23-.693" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                        <path d="M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                        <path d="M5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                  );
           }
       }
       return null;
@@ -197,57 +265,27 @@ const MainLayout: React.FC = () => {
     <div className="fixed inset-0 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-200 font-sans flex flex-col items-center p-2 sm:p-4 transition-colors duration-300 overflow-hidden">
       <div className="w-full max-w-5xl mx-auto relative z-10 flex flex-col h-full max-h-full">
         <div className="flex-shrink-0">
-            <Header onToggleHistory={() => setIsHistoryVisible(v => !v)} />
+            <Header 
+                onToggleHistory={() => setIsHistoryVisible(v => !v)} 
+                user={user}
+                onSignOut={handleSignOut}
+            />
         </div>
         
-        {/* Navigation Tabs - Single Horizontal Row */}
+        {/* Navigation Tabs */}
         <div className="w-full flex justify-center mb-4 flex-shrink-0 relative z-20">
              <div className="bg-white/50 dark:bg-gray-800/50 backdrop-blur-md border border-gray-200 dark:border-gray-700 rounded-2xl p-1.5 flex flex-nowrap overflow-x-auto no-scrollbar justify-start sm:justify-center gap-1 w-full sm:w-auto shadow-sm px-1 py-1.5 snap-x">
-                <div className="flex-shrink-0 min-w-[110px] snap-center">
-                    <TabButton 
-                    label={t.tabs.text2image} 
-                    isActive={activeTab === AppTab.TEXT2IMAGE} 
-                    onClick={() => handleTabClick(AppTab.TEXT2IMAGE)}
-                    icon={getTabIcon(AppTab.TEXT2IMAGE)}
-                    isLoading={loadingStates[AppTab.TEXT2IMAGE]}
-                    />
-                </div>
-                <div className="flex-shrink-0 min-w-[110px] snap-center">
-                    <TabButton 
-                    label={t.tabs.image2image} 
-                    isActive={activeTab === AppTab.IMAGE2IMAGE} 
-                    onClick={() => handleTabClick(AppTab.IMAGE2IMAGE)}
-                    icon={getTabIcon(AppTab.IMAGE2IMAGE)}
-                    isLoading={loadingStates[AppTab.IMAGE2IMAGE]}
-                    />
-                </div>
-                <div className="flex-shrink-0 min-w-[110px] snap-center">
-                    <TabButton 
-                    label={t.tabs.image2text} 
-                    isActive={activeTab === AppTab.IMAGE2TEXT} 
-                    onClick={() => handleTabClick(AppTab.IMAGE2TEXT)}
-                    icon={getTabIcon(AppTab.IMAGE2TEXT)}
-                    isLoading={loadingStates[AppTab.IMAGE2TEXT]}
-                    />
-                </div>
-                <div className="flex-shrink-0 min-w-[110px] snap-center">
-                    <TabButton 
-                    label={t.tabs.enchUpscl} 
-                    isActive={activeTab === AppTab.ENCH_UPSCL} 
-                    onClick={() => handleTabClick(AppTab.ENCH_UPSCL)}
-                    icon={getTabIcon(AppTab.ENCH_UPSCL)}
-                    isLoading={loadingStates[AppTab.ENCH_UPSCL]}
-                    />
-                </div>
-                <div className="flex-shrink-0 min-w-[110px] snap-center">
-                    <TabButton 
-                    label={t.tabs.frame2image} 
-                    isActive={activeTab === AppTab.FRAME2IMAGE} 
-                    onClick={() => handleTabClick(AppTab.FRAME2IMAGE)}
-                    icon={getTabIcon(AppTab.FRAME2IMAGE)}
-                    isLoading={loadingStates[AppTab.FRAME2IMAGE]}
-                    />
-                </div>
+                {Object.values(AppTab).map(tab => (
+                    <div key={tab} className="flex-shrink-0 min-w-[110px] snap-center">
+                        <TabButton 
+                            label={t.tabs[tab === 'ench&upscl' ? 'enchUpscl' : tab]} 
+                            isActive={activeTab === tab} 
+                            onClick={() => handleTabClick(tab)}
+                            icon={getTabIcon(tab)}
+                            isLoading={loadingStates[tab]}
+                        />
+                    </div>
+                ))}
             </div>
         </div>
 

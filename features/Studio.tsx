@@ -16,7 +16,8 @@ import { Logger } from '../utils/logger';
 import ErrorAlert from '../components/ErrorAlert';
 import ChatMessageComponent from '../components/ChatMessage';
 import ImageCard from '../components/ImageCard';
-import { ArrowTrendingUpIcon, PlusIcon, TrashIcon, SparklesIcon, FilmIcon, PhotoIcon, PencilSquareIcon, MicrophoneIcon, StopCircleIcon, ExclamationTriangleIcon, PaperClipIcon, XMarkIcon, UploadIcon, GoogleDriveIcon, VideoPlusIcon, BodyPoseIcon } from '../components/Icons';
+import ExperimentTool from './ExperimentTool'; // NEW IMPORT
+import { ArrowTrendingUpIcon, PlusIcon, TrashIcon, SparklesIcon, FilmIcon, PhotoIcon, PencilSquareIcon, MicrophoneIcon, StopCircleIcon, ExclamationTriangleIcon, PaperClipIcon, XMarkIcon, UploadIcon, GoogleDriveIcon, VideoPlusIcon, BodyPoseIcon, BeakerIcon } from '../components/Icons';
 
 interface StudioProps {
   activeTab: AppTab;
@@ -81,7 +82,7 @@ const Studio: React.FC<StudioProps> = ({
   revisitData, 
   onRevisitHandled, 
   isLoading, 
-  setIsLoading,
+  setIsLoading, 
   onHandoff,
   handoffData,
   onHandoffHandled
@@ -117,6 +118,11 @@ const Studio: React.FC<StudioProps> = ({
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [batchPrompts, setBatchPrompts] = useState<string[]>(['', '']);
   const [batchImages, setBatchImages] = useState<(ImageData | null)[]>([null, null]); // Parallel array for images in batch
+
+  // === EXPERIMENT TAB OVERRIDE ===
+  if (activeTab === AppTab.XPRMNT) {
+      return <ExperimentTool addToHistory={addToHistory} />;
+  }
 
   // Handle Transcript Updates
   useEffect(() => {
@@ -204,6 +210,9 @@ const Studio: React.FC<StudioProps> = ({
       case AppTab.FRAME2IMAGE:
         if (!systemInstruction) systemInstruction = "You are a video frame extraction assistant.";
         greeting = "Upload a video to extract high-quality frames.";
+        break;
+      // XPRMNT case handled by early return above, but kept here for fallback logic consistency in config
+      case AppTab.XPRMNT:
         break;
     }
 
@@ -691,7 +700,7 @@ const Studio: React.FC<StudioProps> = ({
                                }
                            }]
                        });
-                   }
+                   } 
               } else {
                  responseText = response.text || '';
               }
@@ -810,7 +819,7 @@ const Studio: React.FC<StudioProps> = ({
            if (activeTab === AppTab.IMAGE2TEXT && images.length > 0) {
                addToHistory({
                    id: Date.now().toString(),
-                   type: AppTab.IMAGE2TEXT,
+                   type: activeTab,
                    timestamp: Date.now(),
                    prompt: userMessage.text || 'Analysis',
                    inputImages: images.map(i => i.url),
@@ -867,7 +876,7 @@ const Studio: React.FC<StudioProps> = ({
 
   return (
     <div 
-        className="flex flex-col w-full h-full max-w-4xl mx-auto bg-white dark:bg-gray-800/50 rounded-3xl shadow-2xl backdrop-blur-sm overflow-hidden border border-gray-100 dark:border-gray-700"
+        className="flex flex-col w-full h-full max-w-5xl mx-auto bg-gray-50 dark:bg-gray-900 rounded-3xl shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700"
         onDragOver={handleDragOver}
         onDrop={handleDrop}
     >
@@ -875,15 +884,15 @@ const Studio: React.FC<StudioProps> = ({
         {messages.length === 0 && !isLoading && (
           <div 
             onClick={() => activeTab !== AppTab.TEXT2IMAGE && fileInputRef.current?.click()}
-            className={`flex flex-col items-center justify-center h-full text-gray-400 transition-all duration-300 border-2 border-dashed border-transparent rounded-3xl group ${activeTab !== AppTab.TEXT2IMAGE ? 'cursor-pointer hover:bg-gray-50/50 dark:hover:bg-gray-800/50 hover:border-gray-300 dark:hover:border-gray-600' : ''}`}
+            className={`flex flex-col items-center justify-center h-full text-gray-400 transition-all duration-300 border-2 border-dashed border-transparent rounded-3xl group ${activeTab !== AppTab.TEXT2IMAGE ? 'cursor-pointer hover:bg-gray-200/50 dark:hover:bg-gray-800/50 hover:border-gray-300 dark:hover:border-gray-600' : ''}`}
           >
-             <div className="p-6 rounded-full bg-gray-100 dark:bg-gray-800 group-hover:scale-110 transition-transform mb-4">
-                 {activeTab === AppTab.FRAME2IMAGE ? <FilmIcon /> : (activeTab === AppTab.IMAGE2TEXT ? <PhotoIcon /> : (activeTab === AppTab.TEXT2IMAGE ? <SparklesIcon /> : <UploadIcon />))}
+             <div className="p-6 rounded-full bg-gray-200 dark:bg-gray-800 group-hover:scale-110 transition-transform mb-4">
+                 {activeTab === AppTab.FRAME2IMAGE ? <FilmIcon /> : (activeTab === AppTab.IMAGE2TEXT ? <PhotoIcon /> : (activeTab === AppTab.XPRMNT ? <BeakerIcon /> : (activeTab === AppTab.TEXT2IMAGE ? <SparklesIcon /> : <UploadIcon />)))}
              </div>
              <p className="text-lg font-medium text-gray-600 dark:text-gray-300">
                 {activeTab === AppTab.FRAME2IMAGE 
                     ? 'Click to upload video footage' 
-                    : (activeTab === AppTab.TEXT2IMAGE ? 'Ready to generate' : 'Click to upload image(s)')}
+                    : (activeTab === AppTab.TEXT2IMAGE ? 'Ready to generate' : (activeTab === AppTab.XPRMNT ? 'Upload image (optional) & Start' : 'Click to upload image(s)'))}
              </p>
              {activeTab !== AppTab.TEXT2IMAGE && (
                  <p className="text-sm text-gray-400 mt-2">or drag & drop anywhere</p>
@@ -915,18 +924,18 @@ const Studio: React.FC<StudioProps> = ({
           </div>
       )}
 
-      <div className="p-4 sm:p-6 bg-white dark:bg-gray-900/80 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
+      <div className="p-4 sm:p-6 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 flex-shrink-0">
         {(activeTab === AppTab.TEXT2IMAGE || activeTab === AppTab.IMAGE2TEXT || activeTab === AppTab.IMAGE2IMAGE || (activeTab === AppTab.IMAGE2IMAGE && selectedModel === 'sd-external')) && (
-             <div className="flex flex-wrap items-center justify-center sm:justify-between gap-2 sm:gap-4 mb-4">
+             <div className="flex flex-wrap items-center justify-between gap-2 mb-4 w-full">
                 
                 {/* COMBINED TOOLBAR: Wrapped in single flex container for better density */}
-                <div className="flex flex-wrap xl:flex-nowrap items-center gap-2 w-full justify-center sm:justify-between">
+                <div className="flex flex-wrap xl:flex-nowrap items-center gap-2 w-full justify-between">
                     
                     {/* Left Side: Templates / Modes */}
-                    <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+                    <div className="flex items-center gap-2 flex-wrap justify-start">
                         {/* PROMPT TEMPLATE */}
                         {activeTab !== AppTab.IMAGE2IMAGE && (
-                            <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+                            <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                                 <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 px-1 uppercase tracking-wider hidden sm:inline">{t.promptTemplate}:</span>
                                 <select 
                                     value={selectedTemplate}
@@ -945,7 +954,7 @@ const Studio: React.FC<StudioProps> = ({
                         {(activeTab === AppTab.TEXT2IMAGE || activeTab === AppTab.IMAGE2TEXT) && (
                             <button 
                                 onClick={() => setIsBatchMode(!isBatchMode)}
-                                className={`text-[10px] font-bold px-2 py-1.5 rounded-lg transition-colors ${isBatchMode ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+                                className={`text-[10px] font-bold px-2 py-1.5 rounded-lg transition-colors border ${isBatchMode ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700'}`}
                             >
                                 Batch Mode
                             </button>
@@ -953,7 +962,7 @@ const Studio: React.FC<StudioProps> = ({
 
                         {/* ENGINE SELECTOR FOR IMAGE2TEXT */}
                         {activeTab === AppTab.IMAGE2TEXT && (
-                            <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1 ring-1 ring-indigo-500/30">
+                            <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 ring-1 ring-indigo-500/30 border border-gray-200 dark:border-gray-700">
                                 <span className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 px-1 uppercase tracking-wider hidden sm:inline">Engine:</span>
                                 <select 
                                     value={selectedEngine}
@@ -972,7 +981,7 @@ const Studio: React.FC<StudioProps> = ({
                             <div className="flex items-center gap-2">
                                 <button 
                                     onClick={() => setShowPoseUpload(!showPoseUpload)}
-                                    className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-lg transition-all ${showPoseUpload ? 'bg-pink-500 text-white shadow-lg' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+                                    className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1.5 rounded-lg transition-all border ${showPoseUpload ? 'bg-pink-500 text-white shadow-lg border-pink-500' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700'}`}
                                     title="Copy Pose from Reference Image"
                                 >
                                     <BodyPoseIcon className="w-3 h-3" />
@@ -1001,8 +1010,8 @@ const Studio: React.FC<StudioProps> = ({
 
                     {/* Right Side: Model / AR / Count */}
                     {(activeTab === AppTab.TEXT2IMAGE || (activeTab === AppTab.IMAGE2IMAGE && selectedModel === 'sd-external')) && (
-                        <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-end">
-                            <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+                        <div className="flex items-center gap-2 flex-wrap justify-end">
+                            <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                                 <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 px-1 uppercase tracking-wider hidden sm:inline">{t.model}:</span>
                                 <select 
                                     value={selectedModel}
@@ -1015,7 +1024,7 @@ const Studio: React.FC<StudioProps> = ({
                                 </select>
                             </div>
 
-                            <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+                            <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                                 <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 px-1 uppercase tracking-wider hidden sm:inline">{t.aspectRatio}:</span>
                                 <select 
                                     value={aspectRatio}
@@ -1029,7 +1038,7 @@ const Studio: React.FC<StudioProps> = ({
                             </div>
 
                             {selectedModel !== 'sd-external' && (
-                                 <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+                                 <div className="flex items-center gap-1 bg-white dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
                                     <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 px-1 uppercase tracking-wider hidden sm:inline">Count:</span>
                                     <select 
                                         value={numberOfImages}
@@ -1111,7 +1120,7 @@ const Studio: React.FC<StudioProps> = ({
                                        <>
                                            <button 
                                                 onClick={() => document.getElementById(`batch-upload-${idx}`)?.click()}
-                                                className="w-10 h-10 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg border border-dashed border-gray-400 dark:border-gray-600 flex items-center justify-center text-gray-500 transition-colors"
+                                                className="w-10 h-10 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg border border-dashed border-gray-400 dark:border-gray-600 flex items-center justify-center text-gray-500 transition-colors"
                                                 title="Upload Image"
                                            >
                                                <PlusIcon />
@@ -1137,7 +1146,7 @@ const Studio: React.FC<StudioProps> = ({
                                         value={prompt}
                                         onChange={(e) => handleBatchChange(idx, e.target.value)}
                                         placeholder={activeTab === AppTab.IMAGE2TEXT ? `Ask about image ${idx + 1} (optional)` : `Batch Prompt ${idx + 1}`}
-                                        className="w-full px-4 py-2 pr-10 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white border-transparent focus:border-indigo-500 focus:ring-0"
+                                        className="w-full px-4 py-2 pr-10 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-700 focus:border-indigo-500 focus:ring-0"
                                 />
                                 {hasSupport && (
                                     <button
@@ -1206,12 +1215,12 @@ const Studio: React.FC<StudioProps> = ({
                         </div>
                     )}
 
-                    <div className="relative flex items-end gap-2 bg-gray-100 dark:bg-gray-800 rounded-xl p-2 shadow-inner border border-transparent focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
+                    <div className="relative flex items-end gap-2 bg-white dark:bg-gray-800 rounded-xl p-2 shadow-inner border border-gray-200 dark:border-gray-700 focus-within:border-indigo-500 focus-within:ring-1 focus-within:ring-indigo-500 transition-all">
                          {/* Attachment Button Logic Split for Clarity */}
                         {activeTab === AppTab.FRAME2IMAGE && (
                             <button 
                                 onClick={() => fileInputRef.current?.click()}
-                                className="p-2 mb-1 text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
+                                className="p-2 mb-1 text-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                                 title="Upload Video"
                             >
                                 <VideoPlusIcon className="w-5 h-5" />
@@ -1221,7 +1230,7 @@ const Studio: React.FC<StudioProps> = ({
                         {activeTab !== AppTab.TEXT2IMAGE && activeTab !== AppTab.FRAME2IMAGE && (
                             <button 
                                 onClick={() => fileInputRef.current?.click()}
-                                className="p-2 mb-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700"
+                                className="p-2 mb-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
                                 title="Attach files"
                             >
                                 <PaperClipIcon />
@@ -1259,7 +1268,7 @@ const Studio: React.FC<StudioProps> = ({
                                         ? 'text-red-500 bg-red-100 dark:bg-red-900/30' 
                                         : isListening && !isBatchMode 
                                             ? 'text-red-500 bg-red-100 dark:bg-red-900/30 animate-pulse' 
-                                            : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                                            : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                                     }`}
                                     title={speechError ? "Microphone access denied. Click to retry." : "Dictate prompt"}
                                 >

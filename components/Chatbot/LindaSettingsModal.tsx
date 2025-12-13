@@ -9,11 +9,12 @@ interface LindaSettingsModalProps {
   onClose: () => void;
   initialConfig: LindaConfig;
   onSave: (config: LindaConfig) => void;
+  currentAvatarUrl: string;
 }
 
 const VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
 
-const LindaSettingsModal: React.FC<LindaSettingsModalProps> = ({ isOpen, onClose, initialConfig, onSave }) => {
+const LindaSettingsModal: React.FC<LindaSettingsModalProps> = ({ isOpen, onClose, initialConfig, onSave, currentAvatarUrl }) => {
   const [config, setConfig] = useState<LindaConfig>(initialConfig);
   
   // Voice Dictation
@@ -154,7 +155,7 @@ const LindaSettingsModal: React.FC<LindaSettingsModalProps> = ({ isOpen, onClose
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-[#444746] bg-[#1e1f20]">
         <div className="flex items-center gap-4">
-          <img src="https://i.ibb.co/CKgDjsnH/videoframe-300-300.png" alt="avatar" className="w-10 h-10 rounded-full object-cover" />
+          <img src={currentAvatarUrl} alt="avatar" className="w-10 h-10 rounded-full object-cover" />
           <h1 className="text-xl font-medium">{config.name || 'Linda'}</h1>
         </div>
         <div className="flex items-center gap-4">
@@ -360,7 +361,7 @@ const LindaSettingsModal: React.FC<LindaSettingsModalProps> = ({ isOpen, onClose
             <div className="bg-[#1e1f20] rounded-[2rem] p-2 pl-6 flex items-center shadow-lg border border-[#444746]">
                 <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-600 to-green-800 mr-4 flex-shrink-0 overflow-hidden">
                      {/* Placeholder Avatar */}
-                     <img src="https://i.ibb.co/CKgDjsnH/videoframe-300-300.png" alt="avatar" className="w-full h-full object-cover opacity-100" />
+                     <img src={currentAvatarUrl} alt="avatar" className="w-full h-full object-cover opacity-100" />
                 </div>
                 <input 
                     type="text" 

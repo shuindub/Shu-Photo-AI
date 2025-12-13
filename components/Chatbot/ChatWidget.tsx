@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { XMarkIcon, ArrowTrendingUpIcon, PhoneIcon, CogIcon, MicrophoneIcon, ChatBubbleIcon, SpeakerWaveIcon, StopCircleIcon, ExclamationTriangleIcon, PaperClipIcon, WomanSilhouetteIcon, DownloadIcon, WaveformIcon } from '../Icons';
+import { XMarkIcon, ArrowTrendingUpIcon, PhoneIcon, CogIcon, MicrophoneIcon, ChatBubbleIcon, SpeakerWaveIcon, StopCircleIcon, ExclamationTriangleIcon, PaperClipIcon, WomanSilhouetteIcon, DownloadIcon, WaveformIcon, BoltIcon, MagnifyingGlassIcon, GlobeAltIcon, SparklesIcon, PaintBrushIcon } from '../Icons';
 import { useSettings } from '../../contexts/SettingsContext';
 import { createChatSession, generateSpeech } from '../../services/geminiService';
 import { Chat } from '@google/genai';
@@ -12,7 +12,13 @@ import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 import { compressImage } from '../../utils/fileUtils';
 import ChatMessageComponent from '../ChatMessage';
 
-const AVATAR_URL = "https://i.ibb.co/CKgDjsnH/videoframe-300-300.png";
+const AVATAR_URLS = [
+    "https://i.ibb.co/CKgDjsnH/videoframe-300-300.png",
+    "https://i.ibb.co/HLdM5wqF/videoframe-5991-6.png",
+    "https://i.ibb.co/hR64hhqF/videoframe-5991-4.png",
+    "https://i.ibb.co/C39vQCTS/videoframe-5991-5.png",
+    "https://i.ibb.co/TDSzhHrM/photo-2024-03-30-07-19-05.jpg"
+];
 
 const APP_KNOWLEDGE_BASE = `
 You are deeply integrated into the "Shu Photo ∆I" web application. You have full knowledge of its codebase, functionality, and business logic.
@@ -183,13 +189,21 @@ const ChatWidget: React.FC = () => {
   const dragStartPos = useRef<{x: number, y: number} | null>(null);
   const windowRef = useRef<HTMLDivElement>(null);
 
+  // Avatar Selection
+  const [currentAvatar, setCurrentAvatar] = useState(AVATAR_URLS[0]);
+
+  useEffect(() => {
+      // Pick random avatar on mount
+      setCurrentAvatar(AVATAR_URLS[Math.floor(Math.random() * AVATAR_URLS.length)]);
+  }, []);
+
   // Load config from localStorage
   const [lindaConfig, setLindaConfig] = useState<LindaConfig>(() => {
       const saved = localStorage.getItem('linda_config');
       return saved ? JSON.parse(saved) : DEFAULT_LINDA_CONFIG;
   });
 
-  // Check if in Love Mode for styling. Using startsWith to be more robust against trailing spaces.
+  // Check if in Love Mode for styling.
   const isLoveMode = lindaConfig.description?.trim().startsWith("Мишанина малышка");
 
   // Persistent Messages
@@ -216,6 +230,11 @@ const ChatWidget: React.FC = () => {
   const { isListening, transcript, startListening, stopListening, hasSupport, error: speechError } = useSpeechRecognition();
   const [initialInputSnapshot, setInitialInputSnapshot] = useState('');
 
+  // Toolbar Toggles
+  const [isWebSearchActive, setIsWebSearchActive] = useState(false);
+  const [isDeepThinkActive, setIsDeepThinkActive] = useState(false);
+  const [isMagicEditActive, setIsMagicEditActive] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize Position logic (Bottom Right default)
@@ -234,12 +253,13 @@ const ChatWidget: React.FC = () => {
   // Handle auto-expanding window position when opening first time
   useEffect(() => {
       if (isOpen && position) {
-          // If the window is too low to be fully visible when expanded, move it up
-          const windowHeight = 500;
-          if (position.y + windowHeight > window.innerHeight) {
+          const windowHeight = 650;
+          const viewportHeight = window.innerHeight;
+          // Ensure window expands upwards if close to bottom
+          if (position.y + windowHeight > viewportHeight) {
               setPosition(prev => ({
                   x: prev?.x || 0,
-                  y: Math.max(20, window.innerHeight - windowHeight - 20)
+                  y: Math.max(20, viewportHeight - windowHeight - 20)
               }));
           }
       }
@@ -262,7 +282,6 @@ const ChatWidget: React.FC = () => {
         ? SECRET_LINDA_INSTRUCTIONS + "\n\n" + APP_KNOWLEDGE_BASE 
         : DEFAULT_LINDA_CONFIG.instructions;
     
-    // Only update if substantially different to avoid loops, but ensure secret mode sticks
     if (lindaConfig.instructions !== targetInstructions) {
         const newConfig = { ...lindaConfig, instructions: targetInstructions };
         setLindaConfig(newConfig);
@@ -284,12 +303,11 @@ const ChatWidget: React.FC = () => {
 
   useEffect(() => {
     const img = new Image();
-    img.src = AVATAR_URL;
-  }, []);
+    img.src = currentAvatar;
+  }, [currentAvatar]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
       if (e.button !== 0) return; 
-      // Prevent drag starting from buttons
       if ((e.target as HTMLElement).closest('button')) return;
 
       setIsDragging(true);
@@ -305,7 +323,6 @@ const ChatWidget: React.FC = () => {
       const newX = e.clientX - dragStartPos.current.x;
       const newY = e.clientY - dragStartPos.current.y;
       
-      // Boundaries
       const maxX = window.innerWidth - 60; 
       const maxY = window.innerHeight - 60; 
 
@@ -365,7 +382,7 @@ const ChatWidget: React.FC = () => {
 
   useEffect(() => {
     if (isOpen && !chatSessionRef.current && !isVoiceMode) {
-        chatSessionRef.current = createChatSession(lindaConfig.instructions, [], true);
+        chatSessionRef.current = createChatSession(lindaConfig.instructions, [], isWebSearchActive);
     }
     if (isOpen) {
         setShowIntro(true);
@@ -462,15 +479,22 @@ const ChatWidget: React.FC = () => {
     setLoading(true);
 
     try {
-        if (!chatSessionRef.current) {
-             chatSessionRef.current = createChatSession(lindaConfig.instructions, [], true);
-        }
+        chatSessionRef.current = createChatSession(lindaConfig.instructions, [], isWebSearchActive);
 
         if (chatSessionRef.current) {
+            let finalPrompt = userText;
+            
+            if (isDeepThinkActive) {
+                finalPrompt = "[DeepThink Mode: Enabled] Please reason deeply about this request before answering. " + finalPrompt;
+            }
+            if (isMagicEditActive) {
+                finalPrompt = "[MagicEdit Mode: Enabled] " + finalPrompt;
+            }
+
             let payload: any;
             if (currentImages.length > 0) {
                 const parts = [];
-                if (userText) parts.push({ text: userText });
+                if (finalPrompt) parts.push({ text: finalPrompt });
                 currentImages.forEach(img => {
                     parts.push({
                         inlineData: {
@@ -481,7 +505,7 @@ const ChatWidget: React.FC = () => {
                 });
                 payload = { message: parts }; 
             } else {
-                payload = { message: userText };
+                payload = { message: finalPrompt };
             }
 
             const response = await chatSessionRef.current.sendMessage(payload);
@@ -553,14 +577,17 @@ const ChatWidget: React.FC = () => {
       }
   };
 
-  // Turn Voice Mode off manually if needed
   const stopVoiceMode = () => {
       setIsVoiceMode(false);
   }
 
+  // Pre-fill input helpers
+  const runAudit = () => setInput("Run Audit: ");
+  const runAuditXL = () => setInput("Run Audit XL: ");
+
   return (
     <>
-    {/* UNIFIED DRAGGABLE CONTAINER */}
+    {/* UNIFIED MORPHING CONTAINER */}
     <div 
         ref={windowRef}
         style={{ 
@@ -570,297 +597,320 @@ const ChatWidget: React.FC = () => {
             zIndex: 60,
             opacity: position ? 1 : 0
         }}
-        className={`transition-shadow duration-100 ${isDragging ? 'cursor-grabbing' : ''}`}
+        className={`transition-shadow duration-300 ${isDragging ? 'cursor-grabbing' : ''}`}
     >
-        
-        {/* === MINIMIZED VIEW (AVATAR HEAD) === */}
-        <div 
-            className={`${isOpen ? 'hidden' : 'flex'} items-center gap-2 group cursor-move select-none`}
-            onMouseDown={handleMouseDown}
-        >
-             {/* Main Avatar Bubble */}
-            <div className={`relative w-16 h-16 rounded-full shadow-xl border-2 border-white dark:border-gray-700 bg-white dark:bg-gray-800 flex items-center justify-center transition-transform duration-300 hover:scale-105 ${isVoiceMode ? 'animate-pulse ring-4 ring-pink-500/20' : ''}`}>
-                 <img 
-                    src={AVATAR_URL} 
-                    alt="Linda" 
-                    className="w-14 h-14 rounded-full object-cover pointer-events-none"
-                 />
-                 
-                 {/* Voice Mode Indicator Overlay */}
-                 {isVoiceMode && (
-                     <div className="absolute inset-0 rounded-full flex items-center justify-center bg-black/20 backdrop-blur-[1px]">
-                         <span className="w-8 h-8 flex items-center justify-center bg-red-500/90 rounded-full animate-pulse shadow-lg">
-                            <WaveformIcon className="w-4 h-4 text-white" />
-                         </span>
-                     </div>
-                 )}
-
-                 {/* Open Button (Whole area is clickable via overlay if not dragging, but explicit button is safer) */}
-                 <button 
-                    onClick={() => setIsOpen(true)}
-                    className="absolute inset-0 rounded-full z-10"
-                    title="Open Chat"
-                 />
-
-                 {/* Quick Action Badge */}
-                 {!isVoiceMode && (
-                    <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-green-500 rounded-full border-2 border-white dark:border-gray-800 flex items-center justify-center z-20">
-                         <span className="w-2 h-2 bg-white rounded-full"></span>
-                    </div>
-                 )}
-            </div>
-
-            {/* Floating Label (Visible on Hover or Voice Active) */}
-            <div className={`
-                bg-white dark:bg-gray-800 px-3 py-1.5 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 
-                text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap
-                transition-all duration-300 origin-left
-                ${isVoiceMode ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-4 pointer-events-none group-hover:opacity-100 group-hover:translate-x-0'}
-            `}>
-                {isVoiceMode ? (
-                    <div className="flex items-center gap-2">
-                        <span className="text-pink-500 animate-pulse">● Live</span>
-                        <button 
-                            onMouseDown={(e) => e.stopPropagation()} 
-                            onClick={stopVoiceMode}
-                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500"
-                        >
-                            <StopCircleIcon className="w-4 h-4 text-red-500" />
-                        </button>
-                    </div>
-                ) : (
-                    "Ask Linda"
-                )}
-            </div>
-        </div>
-
-
-        {/* === EXPANDED VIEW (WINDOW) === */}
-        {/* We use CSS hiding (hidden class) instead of conditional rendering to keep Voice Session alive */}
         <div 
             className={`
-                ${isOpen ? 'flex' : 'hidden'}
-                flex-col w-80 sm:w-96 h-[500px]
-                bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden
-                ${isDragging ? 'shadow-[0_0_25px_rgba(0,0,0,0.3)]' : ''}
+                bg-[#131314] border border-gray-700 shadow-2xl relative overflow-hidden transition-all duration-500 ease-[cubic-bezier(0.19,1,0.22,1)]
+                ${isOpen ? 'w-80 sm:w-96 h-[650px] rounded-2xl' : 'w-16 h-16 rounded-full'}
+                ${isDragging ? 'shadow-[0_0_25px_rgba(0,0,0,0.5)] scale-105' : ''}
             `}
         >
-             {/* Header */}
+            {/* === MINIMIZED VIEW CONTENT === */}
             <div 
                 onMouseDown={handleMouseDown}
-                className="bg-white dark:bg-gray-800 p-3 px-4 flex justify-between items-center border-b border-gray-100 dark:border-gray-700 cursor-move select-none flex-shrink-0"
+                className={`absolute inset-0 flex items-center justify-center cursor-move transition-opacity duration-300 ${isOpen ? 'opacity-0 pointer-events-none delay-0' : 'opacity-100 delay-200'}`}
             >
-                <div className="flex items-center gap-3">
-                    <img 
-                        src={AVATAR_URL} 
-                        alt={lindaConfig.name} 
-                        className="w-8 h-8 rounded-full object-cover shadow-sm cursor-pointer hover:opacity-80 transition-opacity"
-                        loading="eager"
-                        onClick={(e) => { e.stopPropagation(); setIsAvatarPreviewOpen(true); }}
-                    />
-                    <div>
-                        <h3 className="font-semibold text-gray-900 dark:text-white text-sm leading-tight">{lindaConfig.name}</h3>
-                        <p className="text-[10px] text-gray-500 dark:text-gray-400 flex items-center gap-1">
-                            {isLoveMode ? (
-                                <>
-                                    <span className="text-pink-500">💗</span> 
-                                    <span className="text-pink-500 font-medium">In Love</span>
-                                </>
-                            ) : (
-                                <>
-                                    <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${isVoiceMode ? 'bg-red-500' : 'bg-green-500'}`}></span> 
-                                    {isVoiceMode ? 'Voice Live' : 'Online'}
-                                </>
-                            )}
-                        </p>
+                 <div className={`relative w-full h-full flex items-center justify-center group`}>
+                     <img 
+                        src={currentAvatar} 
+                        alt="Linda" 
+                        className={`w-full h-full object-cover pointer-events-none rounded-full transition-transform duration-500 ${isVoiceMode ? 'scale-90' : 'group-hover:scale-110'}`}
+                     />
+                     
+                     {/* Voice Pulse Ring (Minimized) */}
+                     {isVoiceMode && (
+                         <>
+                            <div className="absolute inset-0 rounded-full border-2 border-pink-500 animate-ping opacity-20"></div>
+                            <div className="absolute inset-0 rounded-full border-2 border-pink-500/50 animate-pulse"></div>
+                         </>
+                     )}
+
+                     {/* Open Button Layer */}
+                     <button 
+                        onClick={() => !isDragging && setIsOpen(true)}
+                        className="absolute inset-0 rounded-full z-10"
+                        title="Open Chat"
+                     />
+
+                     {/* Status Badge */}
+                     {!isVoiceMode && (
+                        <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-[#131314] z-20"></div>
+                     )}
+                </div>
+            </div>
+
+            {/* === EXPANDED VIEW CONTENT === */}
+            <div className={`absolute inset-0 flex flex-col bg-[#131314] transition-opacity duration-500 ${isOpen ? 'opacity-100 delay-100' : 'opacity-0 pointer-events-none'}`}>
+                
+                 {/* Header */}
+                <div 
+                    onMouseDown={handleMouseDown}
+                    className="bg-[#1e1f20] p-3 px-4 flex justify-between items-center border-b border-gray-700 cursor-move select-none flex-shrink-0"
+                >
+                    <div className="flex items-center gap-3">
+                        <img 
+                            src={currentAvatar} 
+                            alt={lindaConfig.name} 
+                            className={`w-9 h-9 rounded-full object-cover shadow-sm cursor-pointer hover:opacity-80 transition-all duration-500 border border-gray-600 ${isOpen ? 'scale-100 translate-x-0' : 'scale-50 -translate-x-4'}`}
+                            loading="eager"
+                            onClick={(e) => { e.stopPropagation(); setIsAvatarPreviewOpen(true); }}
+                        />
+                        <div className={`transition-all duration-500 ${isOpen ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2'}`}>
+                            <h3 className="font-semibold text-white text-sm leading-tight">{lindaConfig.name}</h3>
+                            <p className="text-[10px] text-gray-400 flex items-center gap-1.5 mt-0.5">
+                                <span className={`w-1.5 h-1.5 rounded-full ${isVoiceMode ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`}></span> 
+                                {isVoiceMode ? 'Voice Live' : 'Online'}
+                            </p>
+                        </div>
                     </div>
+                    
+                    <div className="flex items-center gap-2" onMouseDown={(e) => e.stopPropagation()}>
+                        <button 
+                            onClick={handleDownloadChat}
+                            className="p-1.5 hover:bg-gray-700 rounded-full text-gray-400 hover:text-white transition-colors"
+                            title="Download"
+                        >
+                            <DownloadIcon className="w-4 h-4" />
+                        </button>
+                         <button 
+                            onClick={() => setIsSettingsOpen(true)}
+                            className={`p-1.5 rounded-full transition-colors relative ${
+                                isLoveMode 
+                                ? 'text-pink-500 hover:bg-pink-900/30' 
+                                : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                            }`}
+                            title="Configure"
+                        >
+                            {isLoveMode ? <WomanSilhouetteIcon className="w-4 h-4" /> : <CogIcon className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />}
+                        </button>
+                        <button 
+                            onClick={() => setIsOpen(false)} 
+                            className="p-1.5 hover:bg-gray-700 rounded-full text-gray-400 hover:text-white transition-colors"
+                            title="Minimize"
+                        >
+                            <div className="w-4 h-4 flex items-center justify-center">
+                                <div className="w-3 h-0.5 bg-current rounded-full"></div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Intro Overlay (Visual only - Face Control Scan) */}
+                 <div className={`absolute inset-0 z-20 bg-black/90 flex flex-col items-center justify-center transition-all duration-700 pointer-events-none top-[60px] ${showIntro ? 'opacity-100 scale-100 backdrop-blur-sm' : 'opacity-0 scale-110'}`}>
+                    <div className="relative">
+                        <div className={`absolute inset-0 rounded-full blur-xl opacity-30 animate-pulse ${isLoveMode ? 'bg-pink-500' : 'bg-indigo-500'}`}></div>
+                        <div className="absolute inset-0 rounded-full border border-white/20 animate-[spin_3s_linear_infinite]"></div>
+                        <img 
+                            src={currentAvatar} 
+                            alt={lindaConfig.name} 
+                            className="w-32 h-32 rounded-full object-cover shadow-2xl relative z-10 border-2 border-gray-700 animate-pulse"
+                            loading="eager"
+                        />
+                    </div>
+                    <p className={`mt-6 font-mono tracking-[0.2em] text-[10px] animate-pulse ${isLoveMode ? 'text-pink-400' : 'text-gray-400'}`}>
+                        {isLoveMode ? 'HEARTBEAT DETECTED' : 'FACE CONTROL ONLINE'}
+                    </p>
                 </div>
                 
-                <div className="flex items-center gap-1" onMouseDown={(e) => e.stopPropagation()}>
-                    <button 
-                        onClick={handleDownloadChat}
-                        className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-                        title="Download"
-                    >
-                        <DownloadIcon className="w-4 h-4" />
-                    </button>
-                     <button 
-                        onClick={() => setIsSettingsOpen(true)}
-                        className={`p-1.5 rounded-full transition-colors relative ${
-                            isLoveMode 
-                            ? 'text-pink-500 hover:bg-pink-100 dark:hover:bg-pink-900/30' 
-                            : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
-                        }`}
-                        title="Configure"
-                    >
-                        {isLoveMode ? <WomanSilhouetteIcon className="w-4 h-4" /> : <CogIcon />}
-                    </button>
-                    <button 
-                        onClick={() => setIsOpen(false)} 
-                        className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors ml-1"
-                        title="Minimize"
-                    >
-                        <div className="w-4 h-4 flex items-center justify-center">
-                            <div className="w-3 h-0.5 bg-current rounded-full"></div>
-                        </div>
-                    </button>
-                </div>
-            </div>
-
-            {/* Intro Overlay (Visual only) */}
-             <div className={`absolute inset-0 z-20 bg-black flex flex-col items-center justify-center transition-opacity duration-700 pointer-events-none top-[60px] ${showIntro ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="relative">
-                    <div className={`absolute inset-0 rounded-full blur-xl opacity-30 animate-pulse ${isLoveMode ? 'bg-pink-500' : 'bg-indigo-500'}`}></div>
-                    <img 
-                        src={AVATAR_URL} 
-                        alt={lindaConfig.name} 
-                        className="w-48 h-48 rounded-full object-cover shadow-2xl relative z-10 border-2 border-gray-800"
-                        loading="eager"
-                    />
-                </div>
-                <p className={`mt-6 font-light tracking-[0.3em] text-xs animate-pulse ${isLoveMode ? 'text-pink-400' : 'text-white'}`}>FACE CONTROL</p>
-                <h3 className="text-white text-xl font-bold mt-2">{lindaConfig.name}</h3>
-            </div>
-            
-            {/* CONTENT AREA */}
-            <div className="flex-grow flex flex-col overflow-hidden relative">
-                {/* 
-                    VOICE SESSION LAYER:
-                    Always rendered if isVoiceMode is true, but we toggle visibility if we want to show chat history underneath.
-                    Actually, if Voice Mode is on, it takes over the UI. 
-                */}
-                {isVoiceMode && (
-                    <div className="absolute inset-0 z-10 bg-gray-50 dark:bg-gray-900">
-                        <LiveVoiceSession config={lindaConfig} onSecretTrigger={handleSecretTrigger} onTranscript={handleVoiceTranscript} isLoveMode={!!isLoveMode} />
-                    </div>
-                )}
-
-                {/* TEXT CHAT LAYER (Standard) */}
-                <div className="flex-grow overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-900 custom-scrollbar select-text pb-20">
-                    {messages.map((msg, idx) => (
-                        <ChatMessageComponent
-                            key={idx}
-                            author={msg.role}
-                            text={msg.text}
-                            images={msg.images}
-                            sources={msg.sources}
-                            avatarUrl={AVATAR_URL}
-                            isPlaying={playingIndex === idx}
-                            isAudioLoading={playingIndex === idx && isAudioLoading}
-                            onPlayAudio={msg.role === 'model' ? () => handlePlayAudio(msg.text, idx) : undefined}
-                        />
-                    ))}
-                    {loading && (
-                        <div className="flex justify-start items-center gap-2">
-                            <img 
-                                src={AVATAR_URL} 
-                                alt={lindaConfig.name} 
-                                className="w-8 h-8 rounded-full object-cover shadow-sm flex-shrink-0" 
-                            />
-                            <div className="bg-white dark:bg-gray-700 p-3 rounded-2xl rounded-bl-sm shadow-sm border border-gray-100 dark:border-gray-600 flex gap-1">
-                                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" />
-                                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-75" />
-                                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-150" />
-                            </div>
+                {/* CONTENT AREA */}
+                <div className={`flex-grow flex flex-col overflow-hidden relative bg-[#131314] transition-opacity duration-700 delay-300 ${showIntro ? 'opacity-0' : 'opacity-100'}`}>
+                    {/* Voice Overlay */}
+                    {isVoiceMode && (
+                        <div className="absolute inset-0 z-10 bg-[#131314] animate-fadeIn">
+                            <LiveVoiceSession config={lindaConfig} onSecretTrigger={handleSecretTrigger} onTranscript={handleVoiceTranscript} isLoveMode={!!isLoveMode} />
                         </div>
                     )}
-                    <div ref={messagesEndRef} />
-                </div>
-                
-                 {selectedImages.length > 0 && (
-                    <div className="absolute bottom-[60px] left-0 right-0 flex gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-900 overflow-x-auto border-t border-gray-100 dark:border-gray-700 custom-scrollbar z-20">
-                        {selectedImages.map((img, idx) => (
-                            <div key={idx} className="relative flex-shrink-0 w-12 h-12 group">
-                                <img src={img.url} alt="upload" className="w-full h-full object-cover rounded-lg border border-gray-200 dark:border-gray-600" />
+
+                    {/* Chat Scroll Area */}
+                    <div className="flex-grow overflow-y-auto p-4 space-y-4 custom-scrollbar select-text pb-48">
+                        {messages.map((msg, idx) => (
+                            <ChatMessageComponent
+                                key={idx}
+                                author={msg.role}
+                                text={msg.text}
+                                images={msg.images}
+                                sources={msg.sources}
+                                avatarUrl={currentAvatar}
+                                isPlaying={playingIndex === idx}
+                                isAudioLoading={playingIndex === idx && isAudioLoading}
+                                onPlayAudio={msg.role === 'model' ? () => handlePlayAudio(msg.text, idx) : undefined}
+                            />
+                        ))}
+                        {loading && (
+                            <div className="flex justify-start items-center gap-3 pl-1 animate-fadeIn">
+                                <img 
+                                    src={currentAvatar} 
+                                    alt={lindaConfig.name} 
+                                    className="w-6 h-6 rounded-full object-cover shadow-sm flex-shrink-0 opacity-80" 
+                                />
+                                <div className="flex gap-1">
+                                    <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" />
+                                    <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce delay-75" />
+                                    <span className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce delay-150" />
+                                </div>
+                            </div>
+                        )}
+                        <div ref={messagesEndRef} />
+                    </div>
+                    
+                     {selectedImages.length > 0 && (
+                        <div className="absolute bottom-[180px] left-0 right-0 flex gap-2 px-4 py-2 bg-[#131314]/90 backdrop-blur-sm overflow-x-auto border-t border-gray-800 custom-scrollbar z-20 animate-slideUp">
+                            {selectedImages.map((img, idx) => (
+                                <div key={idx} className="relative flex-shrink-0 w-12 h-12 group">
+                                    <img src={img.url} alt="upload" className="w-full h-full object-cover rounded-lg border border-gray-700" />
+                                    <button 
+                                        onClick={() => removeSelectedImage(idx)}
+                                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <XMarkIcon className="w-2 h-2" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* INPUT AREA (GERMAN STYLE) */}
+                    <div className="absolute bottom-0 left-0 right-0 bg-[#131314] border-t border-gray-800 z-30 pb-3">
+                        
+                        {/* Row 1: Tools & Toggles */}
+                        <div className="px-4 py-3 flex items-center justify-between">
+                            <div className="flex items-center gap-2">
                                 <button 
-                                    onClick={() => removeSelectedImage(idx)}
-                                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={runAudit}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-[#1e1f20] border border-gray-700 hover:border-yellow-600 rounded-full text-[11px] font-medium text-gray-300 hover:text-white transition-all shadow-sm group"
                                 >
-                                    <XMarkIcon className="w-2 h-2" />
+                                    <BoltIcon className="w-3 h-3 text-yellow-500 group-hover:text-yellow-400" />
+                                    Audit
+                                </button>
+                                <button 
+                                    onClick={runAuditXL}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-[#1e1f20] border border-gray-700 hover:border-blue-600 rounded-full text-[11px] font-medium text-gray-300 hover:text-white transition-all shadow-sm group"
+                                >
+                                    <MagnifyingGlassIcon className="w-3 h-3 text-blue-500 group-hover:text-blue-400" />
+                                    Audit XL
                                 </button>
                             </div>
-                        ))}
-                    </div>
-                )}
 
-                {/* INPUT AREA */}
-                <div className="absolute bottom-0 left-0 right-0 p-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex gap-2 items-end z-20">
-                    {/* ... (Existing input form code) ... */}
-                     <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="p-3 text-gray-400 hover:text-indigo-500 dark:hover:text-indigo-400 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                        title="Attach Image"
-                    >
-                        <PaperClipIcon />
-                    </button>
-                    <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        className="hidden" 
-                        accept="image/*" 
-                        multiple 
-                        onChange={handleFileSelect} 
-                    />
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => setIsWebSearchActive(!isWebSearchActive)}
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all border ${isWebSearchActive ? 'bg-[#1e1f20] text-blue-400 border-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.3)]' : 'bg-[#1e1f20] text-gray-500 border-gray-700 hover:text-gray-300 hover:border-gray-600'}`}
+                                    title="Web Search"
+                                >
+                                    <GlobeAltIcon className="w-4 h-4" />
+                                </button>
+                                <button 
+                                    onClick={() => setIsDeepThinkActive(!isDeepThinkActive)}
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all border ${isDeepThinkActive ? 'bg-[#1e1f20] text-purple-400 border-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.3)]' : 'bg-[#1e1f20] text-gray-500 border-gray-700 hover:text-gray-300 hover:border-gray-600'}`}
+                                    title="DeepThink"
+                                >
+                                    <SparklesIcon className="w-4 h-4" />
+                                </button>
+                                <button 
+                                    onClick={() => setIsMagicEditActive(!isMagicEditActive)}
+                                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all border ${isMagicEditActive ? 'bg-[#1e1f20] text-green-400 border-green-500 shadow-[0_0_10px_rgba(34,197,94,0.3)]' : 'bg-[#1e1f20] text-gray-500 border-gray-700 hover:text-gray-300 hover:border-gray-600'}`}
+                                    title="MagicEdit"
+                                >
+                                    <PaintBrushIcon className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
 
-                    <div className="relative flex-grow">
-                        <form onSubmit={handleSend}>
-                            <input 
-                                type="text" 
-                                value={input}
-                                onChange={(e) => setInput(e.target.value)}
-                                placeholder={`Ask ${lindaConfig.name}...`}
-                                className="w-full px-4 py-3 pr-10 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white border-none focus:ring-2 focus:ring-black dark:focus:ring-white focus:ring-offset-1 dark:focus:ring-offset-gray-800 text-sm transition-all outline-none"
-                            />
-                        </form>
-                        {hasSupport && (
+                        {/* Row 2: Input Field */}
+                        <div className="px-4 pb-4 flex gap-3 items-center">
                             <button
                                 type="button"
-                                onClick={handleToggleDictation}
-                                className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 rounded-full transition-all ${
-                                    speechError 
-                                    ? 'text-red-500 bg-red-100 dark:bg-red-900/30' 
-                                    : isListening 
-                                        ? 'text-red-500 bg-red-100 dark:bg-red-900/30 animate-pulse' 
-                                        : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
-                                }`}
-                                title={speechError ? "Microphone access denied. Click to retry." : "Dictate"}
+                                onClick={() => fileInputRef.current?.click()}
+                                className="p-2 text-gray-500 hover:text-white transition-colors -ml-1"
+                                title="Attach Image"
                             >
-                                {speechError ? <ExclamationTriangleIcon className="w-4 h-4" /> : (isListening ? <StopCircleIcon className="w-4 h-4" /> : <MicrophoneIcon className="w-4 h-4" />)}
+                                <PaperClipIcon className="w-5 h-5" />
                             </button>
-                        )}
+                            <input 
+                                type="file" 
+                                ref={fileInputRef} 
+                                className="hidden" 
+                                accept="image/*" 
+                                multiple 
+                                onChange={handleFileSelect} 
+                            />
+
+                            <div className="relative flex-grow">
+                                <form onSubmit={handleSend}>
+                                    <input 
+                                        type="text" 
+                                        value={input}
+                                        onChange={(e) => setInput(e.target.value)}
+                                        placeholder={isMagicEditActive ? "Describe edits (e.g., 'remove background')..." : `Ask ${lindaConfig.name}...`}
+                                        className={`w-full pl-4 pr-10 py-3 rounded-2xl bg-[#1e1f20] text-gray-200 placeholder-gray-500 border focus:ring-0 focus:outline-none text-sm transition-all shadow-inner ${
+                                            isMagicEditActive 
+                                            ? 'border-green-900/50 focus:border-green-500' 
+                                            : 'border-gray-700 focus:border-gray-500'
+                                        }`}
+                                    />
+                                </form>
+                                {hasSupport && (
+                                    <button
+                                        type="button"
+                                        onClick={handleToggleDictation}
+                                        className={`absolute right-3 top-1/2 transform -translate-y-1/2 transition-all ${
+                                            speechError 
+                                            ? 'text-red-500' 
+                                            : isListening 
+                                                ? 'text-red-500 animate-pulse' 
+                                                : 'text-gray-500 hover:text-gray-300'
+                                        }`}
+                                        title={speechError ? "Microphone access denied. Click to retry." : "Dictate"}
+                                    >
+                                        {speechError ? <ExclamationTriangleIcon className="w-4 h-4" /> : (isListening ? <StopCircleIcon className="w-4 h-4" /> : <MicrophoneIcon className="w-4 h-4" />)}
+                                    </button>
+                                )}
+                            </div>
+                            <button 
+                                onClick={handleSend}
+                                disabled={(!input.trim() && selectedImages.length === 0) || loading}
+                                className="w-11 h-11 bg-[#2a2b2d] border border-gray-600 text-gray-300 rounded-xl hover:bg-gray-700 hover:text-white hover:border-gray-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md flex items-center justify-center"
+                            >
+                                <ArrowTrendingUpIcon className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {/* Row 3: Voice Switch */}
+                        <div className="flex justify-center pt-2 pb-1 border-t border-gray-800">
+                            <button 
+                                onClick={() => setIsVoiceMode(!isVoiceMode)}
+                                className="flex items-center gap-2 px-5 py-2 rounded-full bg-[#1e1f20] border border-gray-700 hover:bg-[#2a2b2d] hover:border-gray-600 transition-all group"
+                            >
+                                <MicrophoneIcon className="w-4 h-4 text-gray-400 group-hover:text-white" />
+                                <span className="text-xs font-medium text-gray-400 group-hover:text-white">Switch to Voice</span>
+                            </button>
+                        </div>
                     </div>
-                    <button 
-                        onClick={handleSend}
-                        disabled={(!input.trim() && selectedImages.length === 0) || loading}
-                        className="p-3 bg-black dark:bg-white text-white dark:text-black rounded-full hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-md transform active:scale-95"
-                    >
-                        <ArrowTrendingUpIcon />
-                    </button>
                 </div>
-            </div>
-            
-             <div className="p-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 flex justify-center flex-shrink-0 z-20 relative">
-                <button 
-                    onClick={() => setIsVoiceMode(!isVoiceMode)}
-                    className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-medium transition-all ${
-                        isVoiceMode 
-                        ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' 
-                        : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
-                    }`}
-                >
-                    {isVoiceMode ? <ChatBubbleIcon /> : <MicrophoneIcon />}
-                    {isVoiceMode ? 'Switch to Text' : 'Switch to Voice'}
-                </button>
             </div>
         </div>
 
-        {/* VOICE PERSISTENCE (HIDDEN CONTAINER WHEN MINIMIZED) */}
-        {/* If minimized AND Voice Mode is on, we render the session hidden here to keep it alive */}
-        {!isOpen && isVoiceMode && (
-             <div className="hidden">
-                  <LiveVoiceSession config={lindaConfig} onSecretTrigger={handleSecretTrigger} onTranscript={handleVoiceTranscript} isLoveMode={!!isLoveMode} />
-             </div>
+        {/* Floating Label (Only when minimized and hovered or speaking) */}
+        {!isOpen && (
+            <div className={`
+                absolute right-full mr-3 top-1/2 -translate-y-1/2
+                bg-white dark:bg-gray-800 px-3 py-1.5 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 
+                text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-nowrap
+                transition-all duration-300 origin-right
+                ${isVoiceMode ? 'opacity-100 scale-100' : 'opacity-0 scale-90 pointer-events-none'}
+            `}>
+                <div className="flex items-center gap-2">
+                    <span className="text-pink-500 animate-pulse">● Live</span>
+                    <button 
+                        onMouseDown={(e) => e.stopPropagation()} 
+                        onClick={stopVoiceMode}
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500"
+                    >
+                        <StopCircleIcon className="w-4 h-4 text-red-500" />
+                    </button>
+                </div>
+            </div>
         )}
 
     </div>
@@ -870,14 +920,15 @@ const ChatWidget: React.FC = () => {
         onClose={() => setIsSettingsOpen(false)}
         initialConfig={lindaConfig}
         onSave={handleSaveConfig}
+        currentAvatarUrl={currentAvatar}
     />
 
     {isAvatarPreviewOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setIsAvatarPreviewOpen(false)}>
+        <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn" onClick={() => setIsAvatarPreviewOpen(false)}>
             <img 
-                src={AVATAR_URL} 
+                src={currentAvatar} 
                 alt="Linda Full" 
-                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl animate-fadeIn"
+                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl scale-100"
                 onClick={(e) => e.stopPropagation()}
             />
             <button 

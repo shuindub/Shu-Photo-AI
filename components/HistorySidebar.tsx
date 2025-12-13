@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { HistoryItem, AppTab } from '../types';
-import { XMarkIcon, SparklesIcon, PencilSquareIcon, PhotoIcon, FilmIcon, ArrowTrendingUpIcon, DownloadIcon } from './Icons';
+import { XMarkIcon, SparklesIcon, PencilSquareIcon, PhotoIcon, FilmIcon, ArrowTrendingUpIcon, DownloadIcon, BeakerIcon } from './Icons';
 import { useSettings } from '../contexts/SettingsContext';
 import { exportHistoryToJson } from '../utils/historyEngine';
 
@@ -22,6 +22,7 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({ isVisible, onClose, his
       case AppTab.IMAGE2TEXT: return <PhotoIcon />;
       case AppTab.FRAME2IMAGE: return <FilmIcon />;
       case AppTab.ENCH_UPSCL: return <ArrowTrendingUpIcon />;
+      case AppTab.XPRMNT: return <BeakerIcon />;
       default: return null;
     }
   };
@@ -33,6 +34,7 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({ isVisible, onClose, his
         case AppTab.IMAGE2TEXT: return t.tabs.image2text;
         case AppTab.FRAME2IMAGE: return t.tabs.frame2image;
         case AppTab.ENCH_UPSCL: return t.tabs.enchUpscl;
+        case AppTab.XPRMNT: return t.tabs.xprmnt;
         default: return type;
     }
   };
@@ -98,6 +100,15 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({ isVisible, onClose, his
                 )}
               </div>
             );
+        case AppTab.XPRMNT:
+            const xprmntItem = item as any;
+            if (xprmntItem.results && xprmntItem.results.length > 0) {
+                 return <img src={xprmntItem.results[0]} alt="Result" className="w-10 h-10 rounded object-cover" />;
+            } else if (xprmntItem.inputImages && xprmntItem.inputImages.length > 0) {
+                 return <img src={xprmntItem.inputImages[0]} alt="Input" className="w-10 h-10 rounded object-cover" />;
+            } else {
+                 return <div className="w-10 h-10 rounded bg-gray-700 flex items-center justify-center text-xs">TXT</div>;
+            }
         default:
           return <div className="w-10 h-10 rounded bg-gray-700"></div>;
     }

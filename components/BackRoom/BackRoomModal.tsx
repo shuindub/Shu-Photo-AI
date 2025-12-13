@@ -1,19 +1,22 @@
 
 import React, { useState, useEffect } from 'react';
-import { XMarkIcon, CheckIcon, SparklesIcon, BackRoomIcon, TrashIcon, ClipboardIcon } from '../Icons';
+import { XMarkIcon, CheckIcon, SparklesIcon, BackRoomIcon, TrashIcon, ClipboardIcon, CloudIcon } from '../Icons';
 import { useBackRoom } from '../../contexts/BackRoomContext';
-import { AppTab } from '../../types';
+import { AppTab, UserProfile } from '../../types';
 import { Logger, LogEntry } from '../../utils/logger';
+import { signIn, signOut, isConnected } from '../../services/googleDriveService';
 
 interface BackRoomModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: 'system' | 'glossary' | 'keys' | 'sd' | 'appearance' | 'logs';
+  onSignOut?: () => void;
 }
 
-const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
+const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose, initialTab = 'system', onSignOut }) => {
   const { config, updateConfig, resetToDefaults, isUnlocked, unlock } = useBackRoom();
   const [password, setPassword] = useState('');
-  const [activeTab, setActiveTab] = useState<'system' | 'glossary' | 'keys' | 'sd' | 'appearance' | 'logs'>('system');
+  const [activeTab, setActiveTab] = useState<'system' | 'glossary' | 'keys' | 'sd' | 'appearance' | 'logs'>(initialTab);
   const [error, setError] = useState('');
   const [localConfig, setLocalConfig] = useState(config);
   
@@ -24,6 +27,7 @@ const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen) {
       setLocalConfig(config);
+      if (initialTab) setActiveTab(initialTab);
       // Subscribe to logs when modal is open
       const unsubscribe = Logger.subscribe((newLogs) => {
           setLogs(newLogs);
@@ -33,7 +37,7 @@ const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
       setPassword('');
       setError('');
     }
-  }, [isOpen, config]);
+  }, [isOpen, config, initialTab]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,6 +52,19 @@ const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
   const handleSave = () => {
     updateConfig(localConfig);
     onClose();
+  };
+
+  const handleDriveConnect = () => {
+      updateConfig(localConfig);
+      signIn();
+  };
+
+  const handleDriveDisconnect = () => {
+      if (onSignOut) onSignOut();
+      else signOut(); // Fallback if prop not passed
+      
+      // Force UI update
+      setLocalConfig({...localConfig});
   };
 
   const filteredLogs = logs.filter(log => 
@@ -135,7 +152,7 @@ const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
                   onClick={() => setActiveTab('sd')}
                   className={`px-6 py-3 font-medium text-sm transition-colors whitespace-nowrap ${activeTab === 'sd' ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
                 >
-                  SD / Colab
+                  External APIs
                 </button>
                 <button
                   onClick={() => setActiveTab('appearance')}
@@ -198,19 +215,45 @@ const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
                         />
                         <p className="text-xs text-gray-500">Required for Uncensored/Llava models in Image2Text.</p>
                     </div>
+
+                    <div className="space-y-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center justify-between">
+                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Google Client ID (For Drive Sync)</label>
+                            {localConfig.googleClientId && (
+                                <button 
+                                    onClick={isConnected() ? handleDriveDisconnect : handleDriveConnect}
+                                    className={`text-xs font-bold text-white px-3 py-1.5 rounded-md transition-colors flex items-center gap-1 shadow-sm ${isConnected() ? 'bg-red-600 hover:bg-red-500' : 'bg-blue-600 hover:bg-blue-500'}`}
+                                >
+                                    <CloudIcon className="w-3 h-3" /> {isConnected() ? 'Disconnect' : 'Connect'}
+                                </button>
+                            )}
+                        </div>
+                        <input
+                            type="text"
+                            value={localConfig.googleClientId || ''}
+                            onChange={(e) => setLocalConfig(prev => ({ ...prev, googleClientId: e.target.value }))}
+                            placeholder="xxxxxxxx-xxxxxxxx.apps.googleusercontent.com"
+                            className="w-full p-3 text-sm font-mono rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                        />
+                        <div className="text-xs text-gray-500 space-y-1 bg-gray-100 dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700">
+                            <p>1. Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Google Cloud Console</a>.</p>
+                            <p>2. Create <strong>OAuth 2.0 Client ID</strong> (Web Application).</p>
+                            <p>3. Add <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded select-all">{window.location.origin}</code> to "Authorized JavaScript origins".</p>
+                            <p>4. Enable <strong>"Google Drive API"</strong> in Library.</p>
+                        </div>
+                    </div>
                   </div>
                 ) : activeTab === 'sd' ? (
-                    <div className="h-full flex flex-col space-y-4">
+                    <div className="h-full flex flex-col space-y-6">
                         <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 p-4 rounded-lg">
-                            <h3 className="text-indigo-800 dark:text-indigo-200 font-bold mb-1">Stable Diffusion / Automatic1111</h3>
+                            <h3 className="text-indigo-800 dark:text-indigo-200 font-bold mb-1">External API Integration</h3>
                             <p className="text-sm text-indigo-700 dark:text-indigo-300">
-                                Connect to a Google Colab instance or local server to run SDXL with custom LoRAs/Checkpoints.
-                                Requires the API to be exposed (e.g., via ngrok).
+                                Configure endpoints for external processing services.
                             </p>
                         </div>
                         
                          <div className="space-y-2">
-                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">SD API URL</label>
+                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">SD API URL (Stable Diffusion)</label>
                             <input
                                 type="text"
                                 value={localConfig.sdApiUrl || ''}
@@ -219,7 +262,22 @@ const BackRoomModal: React.FC<BackRoomModalProps> = ({ isOpen, onClose }) => {
                                 className="w-full p-3 text-sm font-mono rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:outline-none"
                             />
                             <p className="text-xs text-gray-500">
-                                Enter the root URL of your Automatic1111 API (without /sdapi/...).
+                                Root URL of your Automatic1111 API.
+                            </p>
+                        </div>
+
+                        <div className="space-y-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Transform API URL (Experiment Tool)</label>
+                            <input
+                                type="text"
+                                value={localConfig.transformApiUrl || ''}
+                                onChange={(e) => setLocalConfig(prev => ({ ...prev, transformApiUrl: e.target.value }))}
+                                placeholder="https://your-api.com/api/transform"
+                                className="w-full p-3 text-sm font-mono rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                            />
+                            <p className="text-xs text-gray-500">
+                                Endpoint for the single/batch image transform tool. <br/>
+                                <span className="text-yellow-600 dark:text-yellow-400">Note: If left as default, tool runs in Mock Mode (returns input image).</span>
                             </p>
                         </div>
                     </div>

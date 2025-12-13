@@ -5,6 +5,7 @@ export enum AppTab {
   IMAGE2TEXT = 'image2text',
   FRAME2IMAGE = 'frame2image',
   ENCH_UPSCL = 'ench&upscl',
+  XPRMNT = 'xprmnt',
 }
 
 export interface ImageData {
@@ -58,7 +59,13 @@ export interface HistoryItemEnchUpscl extends HistoryItemBase {
   results: string[];
 }
 
-export type HistoryItem = HistoryItemText2Image | HistoryItemImage2Image | HistoryItemImage2Text | HistoryItemFrame2Image | HistoryItemEnchUpscl;
+export interface HistoryItemXprmnt extends HistoryItemBase {
+  type: AppTab.XPRMNT;
+  inputImages?: string[];
+  results?: string[];
+}
+
+export type HistoryItem = HistoryItemText2Image | HistoryItemImage2Image | HistoryItemImage2Text | HistoryItemFrame2Image | HistoryItemEnchUpscl | HistoryItemXprmnt;
 
 // Export Format (Requested Structure)
 export interface HistoryStep {
@@ -76,6 +83,7 @@ export interface LoadingStates {
   [AppTab.IMAGE2TEXT]: boolean;
   [AppTab.FRAME2IMAGE]: boolean;
   [AppTab.ENCH_UPSCL]: boolean;
+  [AppTab.XPRMNT]: boolean;
 }
 
 export interface ChatMessage {
@@ -97,6 +105,8 @@ export interface BackRoomConfig {
   glossary: string;
   openRouterKey?: string;
   sdApiUrl?: string;
+  transformApiUrl?: string; // NEW: Custom endpoint for Experiment tool
+  googleClientId?: string;
   iconTheme: IconTheme;
 }
 
@@ -117,6 +127,12 @@ export interface LindaConfig {
 export interface MiniMessage {
   role: 'user' | 'model';
   text: string;
-  images?: string[]; // Added to support image rendering in ChatWidget
+  images?: string[];
   sources?: { uri: string; title: string }[];
+}
+
+export interface UserProfile {
+  name: string;
+  email: string;
+  picture: string;
 }

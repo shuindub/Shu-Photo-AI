@@ -63,19 +63,18 @@ export const generateImage = async (prompt: string, numberOfImages: number, aspe
     const promises = [];
     
     for (let i = 0; i < numberOfImages; i++) {
-        const config: any = {
-             responseModalities: [Modality.IMAGE],
-        };
-        
+        const config: any = {};
         let finalPrompt = prompt;
         
         // Model-specific config logic
         if (model === 'gemini-3-pro-image-preview') {
             config.imageConfig = { 
-                aspectRatio: aspectRatio === '1:1' ? '1:1' : aspectRatio, 
+                aspectRatio: aspectRatio, 
                 imageSize: '1K'
             }; 
         } else if (model === 'gemini-2.5-flash-image') {
+             // Flash image configuration
+             config.responseModalities = [Modality.IMAGE];
              // Flash image doesn't support imageConfig for AR in the same way, inject into prompt
              if (aspectRatio && aspectRatio !== '1:1') {
                  finalPrompt = `${prompt}. Aspect ratio: ${aspectRatio}`;
@@ -150,71 +149,77 @@ export const editImage = async (base64Image: string, mimeType: string, prompt: s
   Logger.info("GeminiService", "Editing image", { promptLength: prompt.length, mimeType });
   const ai = getGenAI();
   
-  // Fallback Strategy: "Double Tap"
-  // 1. Try with safetySettings (BLOCK_NONE) to bypass censorship
-  // 2. If incompatible (IMAGE_OTHER), try without config
-  
-  const runEdit = async (useSafety: boolean) => {
-      const config: any = {
-          responseModalities: [Modality.IMAGE],
-      };
-      if (useSafety) {
-          config.safetySettings = SAFETY_SETTINGS;
-      }
-
-      return await ai.models.generateContent({
+  // Helper to run the edit request and validate output immediately
+  const runEdit = async (configOverride: any) => {
+      const result = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
           parts: [
-            {
-              inlineData: {
-                data: base64Image,
-                mimeType: mimeType,
-              },
-            },
+            { inlineData: { data: base64Image, mimeType: mimeType } },
             { text: prompt },
           ],
         },
-        config,
+        config: configOverride,
       });
+
+      const candidate = result.candidates?.[0];
+      if (!candidate) throw new Error("No candidate returned");
+
+      if (result.promptFeedback?.blockReason) {
+         throw new Error(`Blocked by safety filter: ${result.promptFeedback.blockReason}`);
+      }
+
+      // If we have an image, we are good
+      const imagePart = candidate.content?.parts?.find(part => part.inlineData);
+      if (imagePart) return result;
+
+      // If no image, check finish reason to determine if we should retry
+      if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+          throw new Error(`Finish Reason: ${candidate.finishReason}`);
+      }
+
+      return result;
   };
 
   let response;
-  try {
-      // Attempt 1: With Safety Settings (Aggressive)
-      response = await runEdit(true);
-  } catch (e: any) {
-      Logger.warn("GeminiService", "Edit Attempt 1 (Safety Config) failed, retrying without config:", e.message);
-      // Attempt 2: Clean (Compatible)
-      response = await runEdit(false);
-  }
+  const errors: string[] = [];
 
-  if (response.promptFeedback?.blockReason) {
-    Logger.error("GeminiService", "Edit Blocked", response.promptFeedback);
-    throw new Error(`Request was blocked due to: ${response.promptFeedback.blockReason}`);
+  // Attempt 1: Standard Safety + Image Modality
+  try {
+      response = await runEdit({
+          responseModalities: [Modality.IMAGE],
+          safetySettings: SAFETY_SETTINGS
+      });
+  } catch (e: any) {
+      errors.push(`Attempt 1: ${e.message}`);
+      
+      // Attempt 2: Clean Config (No forced modality, no explicit safety settings)
+      // This often bypasses 'IMAGE_OTHER' or 'MODALITY' errors by allowing the model to default
+      try {
+          Logger.warn("GeminiService", "Edit Attempt 1 failed, retrying with clean config...", e.message);
+          response = await runEdit({});
+      } catch (e2: any) {
+          errors.push(`Attempt 2: ${e2.message}`);
+          Logger.error("GeminiService", "All edit attempts failed", errors);
+          throw new Error(`Image editing failed. The model refused to generate the image.`);
+      }
   }
 
   const candidate = response.candidates?.[0];
-  if (!candidate) {
-    Logger.error("GeminiService", "No candidate in edit response");
-    throw new Error("No candidate response received from the model.");
-  }
-
-  // Check for non-stop finish reasons which indicate a problem.
-  if (candidate.finishReason && candidate.finishReason !== 'STOP') {
-    Logger.error("GeminiService", "Abnormal finish reason", candidate.finishReason);
-    throw new Error(`Image editing failed. Reason: ${candidate.finishReason}. ${candidate.finishMessage || ''}`);
-  }
-
-  // Find the part that contains the image data, as the order isn't guaranteed.
-  const imagePart = candidate.content?.parts?.find(part => part.inlineData);
+  const imagePart = candidate?.content?.parts?.find(part => part.inlineData);
 
   if (imagePart?.inlineData) {
     Logger.success("GeminiService", "Image edit successful");
     return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
   }
   
-  Logger.error("GeminiService", "Response contained no inlineData", response);
+  // Fallback: Check if model returned text explaining refusal
+  const textPart = candidate?.content?.parts?.find(part => part.text);
+  if (textPart?.text) {
+      Logger.warn("GeminiService", "Model returned text instead of image", textPart.text);
+      throw new Error(`Model returned text instead of image: "${textPart.text.substring(0, 150)}..."`);
+  }
+
   throw new Error("Failed to edit image or no image was returned.");
 };
 

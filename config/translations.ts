@@ -20,7 +20,8 @@ export const translations = {
       image2image: "image2image",
       image2text: "image2text",
       enchUpscl: "ench&upscl",
-      frame2image: "frame2image"
+      frame2image: "frame2image",
+      xprmnt: "Experiment"
     },
     templates: {
       standard: "Standard",
@@ -47,7 +48,8 @@ export const translations = {
       image2image: "image2image",
       image2text: "image2text",
       enchUpscl: "ench&upscl",
-      frame2image: "frame2image"
+      frame2image: "frame2image",
+      xprmnt: "Эксперимент"
     },
     templates: {
       standard: "стандартный",
